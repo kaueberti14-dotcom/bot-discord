@@ -1,6 +1,8 @@
 import discord
 import random
 import os
+import asyncio
+from urllib.parse import urlparse, parse_qs
 
 TOKEN = os.getenv("TOKEN")
 
@@ -15,13 +17,21 @@ limite = 4
 convites = {}
 duplas = {}
 rivais = set()
+painel_fila = None
+
+
+def pegar_codigo_roblox(link):
+    try:
+        query = parse_qs(urlparse(link).query)
+        if "privateServerLinkCode" in query:
+            return query["privateServerLinkCode"][0]
+    except:
+        pass
+    return "Não consegui pegar o código automaticamente."
 
 
 def texto_fila():
-    if fila:
-        jogadores = "\n".join([f"{i+1}. <@{j}>" for i, j in enumerate(fila)])
-    else:
-        jogadores = "Nenhum jogador na fila."
+    jogadores = "\n".join([f"{i+1}. <@{j}>" for i, j in enumerate(fila)]) if fila else "Nenhum jogador na fila."
 
     return (
         f"**Fila da Partida**\n"
@@ -36,7 +46,7 @@ class PainelFila(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Entrar", style=discord.ButtonStyle.green)
-    async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def entrar(self, interaction, button):
         if interaction.user.id in fila:
             await interaction.response.send_message("Você já está na fila!", ephemeral=True)
             return
@@ -49,13 +59,19 @@ class PainelFila(discord.ui.View):
         await interaction.response.edit_message(content=texto_fila(), view=self)
 
     @discord.ui.button(label="Sair", style=discord.ButtonStyle.red)
-    async def sair(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def sair(self, interaction, button):
         if interaction.user.id not in fila:
             await interaction.response.send_message("Você não está na fila.", ephemeral=True)
             return
 
         fila.remove(interaction.user.id)
         await interaction.response.edit_message(content=texto_fila(), view=self)
+
+
+class LinkServidorView(discord.ui.View):
+    def __init__(self, link):
+        super().__init__(timeout=300)
+        self.add_item(discord.ui.Button(label="Entrar no servidor privado", url=link))
 
 
 class ConviteView(discord.ui.View):
@@ -65,7 +81,7 @@ class ConviteView(discord.ui.View):
         self.convidado = convidado
 
     @discord.ui.button(label="Aceitar", style=discord.ButtonStyle.green)
-    async def aceitar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def aceitar(self, interaction, button):
         if interaction.user.id != self.convidado:
             await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
             return
@@ -80,7 +96,7 @@ class ConviteView(discord.ui.View):
         )
 
     @discord.ui.button(label="Recusar", style=discord.ButtonStyle.red)
-    async def recusar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def recusar(self, interaction, button):
         if interaction.user.id != self.convidado:
             await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
             return
@@ -92,42 +108,6 @@ class ConviteView(discord.ui.View):
             content=f"❌ <@{self.convidado}> recusou! Vai cair no time adversário de <@{self.quem_chamou}>.",
             view=None
         )
-
-
-class LimiteView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-
-    async def definir_limite(self, interaction, valor):
-        global limite, fila
-
-        limite = valor
-        fila = []
-
-        await interaction.response.edit_message(
-            content=f"Limite definido para **{limite} jogadores**.\nA fila foi resetada.",
-            view=None
-        )
-
-    @discord.ui.button(label="2", style=discord.ButtonStyle.blurple)
-    async def limite_2(self, interaction, button):
-        await self.definir_limite(interaction, 2)
-
-    @discord.ui.button(label="4", style=discord.ButtonStyle.blurple)
-    async def limite_4(self, interaction, button):
-        await self.definir_limite(interaction, 4)
-
-    @discord.ui.button(label="6", style=discord.ButtonStyle.blurple)
-    async def limite_6(self, interaction, button):
-        await self.definir_limite(interaction, 6)
-
-    @discord.ui.button(label="8", style=discord.ButtonStyle.blurple)
-    async def limite_8(self, interaction, button):
-        await self.definir_limite(interaction, 8)
-
-    @discord.ui.button(label="10", style=discord.ButtonStyle.blurple)
-    async def limite_10(self, interaction, button):
-        await self.definir_limite(interaction, 10)
 
 
 def montar_times(jogadores):
@@ -178,33 +158,42 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    global fila
+    global fila, limite, painel_fila
 
     if message.author == bot.user:
         return
 
-    if message.content == "!criarfila":
+    if message.content.startswith("!criarfila"):
         canal_partidas = discord.utils.get(message.guild.text_channels, name="partidas")
 
         if canal_partidas is None:
             await message.reply("Não achei o canal #partidas.")
             return
 
-        await canal_partidas.send(texto_fila(), view=PainelFila())
-        await message.reply("Fila criada no canal #partidas!")
+        try:
+            numero = int(message.content.replace("!criarfila", ""))
 
-    elif message.content == "!limite":
-        if not message.author.guild_permissions.administrator:
-            await message.reply("Só administrador pode mudar o limite.")
+            if numero not in [2, 4, 6, 8, 10]:
+                await message.reply("Use: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
+                return
+        except:
+            await message.reply("Use: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
             return
 
-        await message.channel.send("Escolha o limite da fila:", view=LimiteView())
+        fila = []
+        limite = numero
+        duplas.clear()
+        convites.clear()
+        rivais.clear()
+
+        painel_fila = await canal_partidas.send(texto_fila(), view=PainelFila())
+        await message.reply(f"Fila criada com limite de **{limite} jogadores** no canal #partidas!")
 
     elif message.content.startswith("!equipe"):
         mencionado = message.mentions.users.first()
 
         if not mencionado:
-            await message.reply("Use: !equipe @jogador")
+            await message.reply("Use: `!equipe @jogador`")
             return
 
         if mencionado.id == message.author.id:
@@ -223,10 +212,21 @@ async def on_message(message):
         )
 
     elif message.content.startswith("!start"):
+        canal_comandos = discord.utils.get(message.guild.text_channels, name="comandos")
+        canal_partidas = discord.utils.get(message.guild.text_channels, name="partidas")
+
+        if canal_comandos and message.channel.id != canal_comandos.id:
+            await message.reply("Use esse comando no canal #comandos.")
+            return
+
+        if canal_partidas is None:
+            await message.reply("Não achei o canal #partidas.")
+            return
+
         args = message.content.split(" ")
 
         if len(args) < 2:
-            await message.reply("Use: !start link_do_servidor")
+            await message.reply("Use: `!start link_do_servidor_privado`")
             return
 
         link = args[1]
@@ -237,6 +237,10 @@ async def on_message(message):
 
         jogadores = fila[:limite]
         time1, time2 = montar_times(jogadores)
+        codigo = pegar_codigo_roblox(link)
+
+        if painel_fila:
+            await painel_fila.edit(content="**PARTIDA EM ANDAMENTO!**", view=None)
 
         for player_id in jogadores:
             user = await bot.fetch_user(player_id)
@@ -245,12 +249,32 @@ async def on_message(message):
             except:
                 print(f"Erro ao enviar DM para {player_id}")
 
-        texto = "**Partida iniciada!**\n\n"
-        texto += "**Time 1:**\n" + "\n".join([f"<@{j}>" for j in time1])
-        texto += "\n\n**Time 2:**\n" + "\n".join([f"<@{j}>" for j in time2])
-        texto += "\n\nO link foi enviado na DM."
+        texto_times = "**PARTIDA EM ANDAMENTO!**\n\n"
+        texto_times += "**Time 1:**\n" + "\n".join([f"<@{j}>" for j in time1])
+        texto_times += "\n\n**Time 2:**\n" + "\n".join([f"<@{j}>" for j in time2])
 
-        await message.channel.send(texto)
+        await canal_partidas.send(texto_times)
+
+        msg_link = await canal_partidas.send(
+            f"**Link do servidor privado:**\n{link}\n\n"
+            f"**Código para copiar:**\n```{codigo}```\n"
+            f"⏳ Esse link ficará disponível por **5 minutos**.",
+            view=LinkServidorView(link)
+        )
+
+        for minutos in [4, 3, 2, 1]:
+            await asyncio.sleep(60)
+            await msg_link.edit(
+                content=(
+                    f"**Link do servidor privado:**\n{link}\n\n"
+                    f"**Código para copiar:**\n```{codigo}```\n"
+                    f"⏳ Esse link ficará disponível por **{minutos} minuto(s)**."
+                ),
+                view=LinkServidorView(link)
+            )
+
+        await asyncio.sleep(60)
+        await msg_link.edit(content="⏰ O tempo do link acabou.", view=None)
 
         fila = fila[limite:]
         duplas.clear()
