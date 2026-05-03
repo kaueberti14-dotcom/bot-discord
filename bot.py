@@ -22,7 +22,7 @@ convites = {}
 duplas = {}
 rivais = set()
 
-BANNER_URL = "https://assets.grok.com/users/146b3868-5f96-4065-839b-e505888ecbaa/generated/46a070ef-ee23-421d-acb7-a7b228078557/image.png"
+BANNER_URL = "https://cdn.discordapp.com/attachments/1499960741221105676/1500327739750875268/image.png"
 
 
 def embed_erro(texto):
@@ -249,11 +249,6 @@ async def iniciar_partida(guild):
 
     partida_ativa = True
 
-    canal = discord.utils.get(guild.text_channels, name="partidas")
-    if canal is None:
-        partida_ativa = False
-        return
-
     jogadores = fila[:limite]
     vermelho, azul = montar_times(jogadores)
 
@@ -300,8 +295,6 @@ async def iniciar_partida(guild):
 
     if painel_partida:
         await painel_partida.edit(embed=embed, view=None)
-    else:
-        await canal.send(embed=embed)
 
     for player_id in jogadores:
         user = await bot.fetch_user(player_id)
