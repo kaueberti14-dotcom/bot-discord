@@ -33,8 +33,6 @@ duplas = {}
 rivais = set()
 
 
-# ================= RANKING =================
-
 def carregar_ranking():
     try:
         with open("ranking.json", "r") as f:
@@ -70,8 +68,6 @@ def adicionar_derrota(uid):
     p["streak"] = 0
     salvar_ranking(data)
 
-
-# ================= FUNÇÕES =================
 
 def embed_erro(texto):
     return discord.Embed(
@@ -195,8 +191,6 @@ def montar_times(jogadores):
     return vermelho, azul
 
 
-# ================= PAINEL =================
-
 class Painel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -280,8 +274,6 @@ class Painel(discord.ui.View):
         )
 
 
-# ================= EQUIPE =================
-
 class ConviteView(discord.ui.View):
     def __init__(self, quem_chamou, convidado):
         super().__init__(timeout=60)
@@ -321,8 +313,6 @@ class ConviteView(discord.ui.View):
             view=None
         )
 
-
-# ================= INICIAR PARTIDA =================
 
 async def iniciar_partida(guild):
     global ultimo_time_azul, ultimo_time_vermelho, ultimo_host, ultimo_modo
@@ -382,24 +372,23 @@ async def iniciar_partida(guild):
             attachments=[file]
         )
 
-    codigo = pegar_codigo(link_partida)
-
     for player_id in jogadores:
         user = await bot.fetch_user(player_id)
 
         try:
-            await user.send(
-                f"🎮 **Partida começou!**\n\n"
-                f"**Link do servidor privado:**\n{link_partida}\n\n"
-                f"**Código:**\n```{codigo}```"
+            embed_dm = discord.Embed(
+                title="🎮 Só falta você para começar!",
+                description=f"[Clique aqui para entrar no servidor privado]({link_partida})",
+                color=discord.Color.dark_red()
             )
+            embed_dm.set_footer(text="Boa partida!")
+
+            await user.send(embed=embed_dm)
         except:
             pass
 
     fila.clear()
 
-
-# ================= EVENTOS =================
 
 @bot.event
 async def on_ready():
@@ -413,7 +402,6 @@ async def on_message(msg):
     if msg.author.bot:
         return
 
-    # criar partida
     if msg.content.startswith("!partida"):
         if not canal_correto(msg, CANAL_COMANDOS):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_COMANDOS}")
@@ -468,7 +456,6 @@ async def on_message(msg):
 
         await msg.reply("Partida criada!")
 
-    # equipe
     elif msg.content.startswith("!equipe"):
         if not canal_correto(msg, CANAL_EQUIPE):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_EQUIPE}")
@@ -498,7 +485,6 @@ async def on_message(msg):
 
         await msg.reply("Convite enviado!")
 
-    # vitória
     elif msg.content.lower().startswith("!vitória"):
         if not tem_cargo(msg.author):
             return await msg.reply(
@@ -541,7 +527,7 @@ async def on_message(msg):
 
         for jogador in perdedores:
             adicionar_derrota(jogador)
-            perdas.append(f"<@{jogador}> ➜ -1 Vitória 💀")
+            perdas.append(f"<@{jogador}> ➜ +1 Derrota 💀")
 
         host = msg.guild.get_member(ultimo_host)
         nome_host = host.display_name if host else "Host"
@@ -583,7 +569,6 @@ async def on_message(msg):
 
         await canal.send(embed=embed, file=file)
 
-    # ranking
     elif msg.content.startswith("!ranking"):
         if not canal_correto(msg, CANAL_RANKING):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_RANKING}")
