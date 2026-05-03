@@ -167,74 +167,41 @@ class ConviteView(discord.ui.View):
         )
 
 
-class LinkServidorView(discord.ui.View):
-    def __init__(self, link):
-        super().__init__(timeout=300)
-        self.add_item(discord.ui.Button(label="Entrar no servidor privado", url=link))
-
-
 async def iniciar_partida(guild):
     global fila, criador_partida, link_partida, partida_ativa, painel_fila
 
-    if partida_ativa:
-        return
-
-    if not link_partida:
-        return
-
-    if len(fila) < limite:
+    if partida_ativa or not link_partida or len(fila) < limite:
         return
 
     partida_ativa = True
 
-    canal_partidas = discord.utils.get(guild.text_channels, name="partidas")
-    if canal_partidas is None:
-        partida_ativa = False
-        return
+    canal = discord.utils.get(guild.text_channels, name="partidas")
 
     jogadores = fila[:limite]
-    time_vermelho, time_azul = montar_times(jogadores)
+    t1, t2 = montar_times(jogadores)
 
     if painel_fila:
         await painel_fila.edit(content="🎮 **PARTIDA EM ANDAMENTO!**", view=None)
 
     codigo = pegar_codigo_roblox(link_partida)
 
-    texto_times = "🎮 **PARTIDA EM ANDAMENTO!**\n\n"
-    texto_times += "🟥 **TIME VERMELHO:**\n"
-    texto_times += "\n".join([f"<@{j}>" for j in time_vermelho])
-    texto_times += "\n\n🟦 **TIME AZUL:**\n"
-    texto_times += "\n".join([f"<@{j}>" for j in time_azul])
+    texto = "🎮 **PARTIDA EM ANDAMENTO!**\n\n"
+    texto += "🟥 **TIME VERMELHO:**\n" + "\n".join([f"<@{j}>" for j in t1])
+    texto += "\n\n🟦 **TIME AZUL:**\n" + "\n".join([f"<@{j}>" for j in t2])
 
-    await canal_partidas.send(texto_times)
+    await canal.send(texto)
 
+    # 🔥 LINK SOMENTE NO PRIVADO
     for player_id in jogadores:
         user = await bot.fetch_user(player_id)
         try:
-            await user.send(f"Partida começou!\nLink: {link_partida}")
+            await user.send(
+                f"🎮 **Partida começou!**\n\n"
+                f"**Link do servidor privado:**\n{link_partida}\n\n"
+                f"**Código:**\n```{codigo}```"
+            )
         except:
             print(f"Erro ao enviar DM para {player_id}")
-
-    msg_link = await canal_partidas.send(
-        f"**Link do servidor privado:**\n{link_partida}\n\n"
-        f"**Código para copiar:**\n```{codigo}```\n"
-        f"⏳ Esse link ficará disponível por **5 minutos**.",
-        view=LinkServidorView(link_partida)
-    )
-
-    for minutos in [4, 3, 2, 1]:
-        await asyncio.sleep(60)
-        await msg_link.edit(
-            content=(
-                f"**Link do servidor privado:**\n{link_partida}\n\n"
-                f"**Código para copiar:**\n```{codigo}```\n"
-                f"⏳ Esse link ficará disponível por **{minutos} minuto(s)**."
-            ),
-            view=LinkServidorView(link_partida)
-        )
-
-    await asyncio.sleep(60)
-    await msg_link.edit(content="⏰ O tempo do link acabou.", view=None)
 
     fila = []
     duplas.clear()
@@ -263,16 +230,11 @@ async def on_message(message):
             await message.reply(embed=embed_erro("Você não possui permissão para criar uma partida!"))
             return
 
-        canal_partidas = discord.utils.get(message.guild.text_channels, name="partidas")
-
-        if canal_partidas is None:
-            await message.reply("Não achei o canal #partidas.")
-            return
+        canal = discord.utils.get(message.guild.text_channels, name="partidas")
 
         partes = message.content.split(" ")
-
         if len(partes) < 2:
-            await message.reply("Use assim: `!criarfila4 link_do_servidor_privado`")
+            await message.reply("Use: !criarfila4 link")
             return
 
         comando = partes[0]
@@ -280,12 +242,7 @@ async def on_message(message):
 
         try:
             numero = int(comando.replace("!criarfila", ""))
-
-            if numero not in [2, 4, 6, 8, 10]:
-                await message.reply("Use apenas: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
-                return
         except:
-            await message.reply("Use assim: `!criarfila4 link_do_servidor_privado`")
             return
 
         fila = []
@@ -293,47 +250,8 @@ async def on_message(message):
         criador_partida = message.author.id
         link_partida = link
 
-        duplas.clear()
-        convites.clear()
-        rivais.clear()
-
-        painel_fila = await canal_partidas.send(texto_fila(), view=PainelFila())
-        await message.reply(f"Partida criada com limite de **{limite} jogadores** no canal #partidas!")
-
-    elif message.content.startswith("!equipe"):
-        mencionado = message.mentions.users.first()
-
-        if not mencionado:
-            await message.reply("Use: `!equipe @jogador`")
-            return
-
-        if mencionado.id == message.author.id:
-            await message.reply("Você não pode chamar você mesmo.")
-            return
-
-        if message.author.id not in fila or mencionado.id not in fila:
-            await message.reply("Os dois jogadores precisam estar na partida.")
-            return
-
-        convites[mencionado.id] = message.author.id
-
-        await message.channel.send(
-            f"{mencionado.mention}, {message.author.mention} quer cair no seu time.",
-            view=ConviteView(message.author.id, mencionado.id)
-        )
-
-    elif message.content.startswith("!start"):
-        canal_comandos = discord.utils.get(message.guild.text_channels, name="comandos")
-
-        if canal_comandos and message.channel.id != canal_comandos.id:
-            await message.reply("Use esse comando no canal #comandos.")
-            return
-
-        if not pode_iniciar_partida(message.author):
-            await message.reply(embed=embed_erro("Você não possui permissão para começar essa partida!"))
-            return
-
-        await iniciar_partida(message.guild)
+        painel_fila = await canal.send(texto_fila(), view=PainelFila())
+        await message.reply("Partida criada!")
 
 
 bot.run(TOKEN)
