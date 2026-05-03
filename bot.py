@@ -1,6 +1,7 @@
 import discord
 import random
 import os
+import json
 from urllib.parse import urlparse, parse_qs
 
 TOKEN = os.getenv("TOKEN")
@@ -15,392 +16,239 @@ fila = []
 limite = 4
 criador_partida = None
 link_partida = None
-partida_ativa = False
 painel_partida = None
 
-convites = {}
-duplas = {}
-rivais = set()
+ultimo_time_azul = []
+ultimo_time_vermelho = []
+ultimo_host = None
+ultimo_modo = None
 
 
-def embed_erro(texto):
-    return discord.Embed(
-        title="❌ Erro",
-        description=texto,
-        color=discord.Color.red()
-    )
-
-
-def tem_cargo(member, nomes):
-    return any(role.name in nomes for role in member.roles)
-
-
-def pode_criar(member):
-    return tem_cargo(member, ["HOST", "Lider", "Sub-Lider"])
-
-
-def pode_cancelar(member):
-    if member.id == criador_partida:
-        return True
-    return tem_cargo(member, ["Lider", "Sub-Lider"])
-
-
-def pegar_codigo_roblox(link):
+# ===== RANKING =====
+def carregar_ranking():
     try:
-        query = parse_qs(urlparse(link).query)
-        return query.get("privateServerLinkCode", ["Não encontrado"])[0]
+        with open("ranking.json", "r") as f:
+            return json.load(f)
     except:
-        return "Não encontrado"
+        return {}
+
+def salvar_ranking(data):
+    with open("ranking.json", "w") as f:
+        json.dump(data, f, indent=4)
+
+def adicionar_vitoria(uid):
+    data = carregar_ranking()
+    uid = str(uid)
+    data[uid] = data.get(uid, 0) + 1
+    salvar_ranking(data)
+
+def remover_vitoria(uid):
+    data = carregar_ranking()
+    uid = str(uid)
+    if uid in data:
+        data[uid] = max(0, data[uid] - 1)
+    salvar_ranking(data)
 
 
-def lista_jogadores():
-    if not fila:
-        return "Nenhum jogador."
-    return "\n".join([f"`{i+1}.` <@{j}>" for i, j in enumerate(fila)])
+# ===== UTILS =====
+def embed_erro(txt):
+    return discord.Embed(title="❌ Erro", description=txt, color=discord.Color.red())
+
+def tem_cargo(member):
+    return any(r.name in ["HOST", "Lider", "Sub-Lider"] for r in member.roles)
+
+def pegar_codigo(link):
+    try:
+        return parse_qs(urlparse(link).query).get("privateServerLinkCode", ["?"])[0]
+    except:
+        return "?"
 
 
+# ===== EMBED PROCURANDO =====
 def embed_procurando(guild):
     host = guild.get_member(criador_partida)
-    nome_host = host.display_name if host else "Host"
+    nome = host.display_name if host else "Host"
 
     embed = discord.Embed(
         title="🔎 PROCURANDO PARTIDA...",
-        description="Aguardando jogadores entrarem na partida.",
+        description="Aguardando jogadores...",
         color=discord.Color.dark_red()
     )
 
-    embed.set_author(
-        name=f"Hoster Responsável: {nome_host}",
-        icon_url=host.display_avatar.url if host else None
-    )
+    embed.set_author(name=f"Host: {nome}")
 
-    embed.add_field(
-        name="👥 JOGADORES",
-        value=lista_jogadores(),
-        inline=False
-    )
+    lista = "\n".join([f"`{i+1}.` <@{j}>" for i,j in enumerate(fila)]) or "Nenhum"
 
+    embed.add_field(name="👥 Jogadores", value=lista, inline=False)
     embed.add_field(
-        name="📋 INFO",
-        value=(
-            f"MODO: `{limite//2}v{limite//2}`\n"
-            f"JOGADORES: `{len(fila)}/{limite}`\n"
-            f"HOST: `{nome_host}`"
-        ),
+        name="📋 Info",
+        value=f"MODO: `{limite//2}v{limite//2}`\nJOGADORES: `{len(fila)}/{limite}`",
         inline=False
     )
 
     embed.set_image(url="attachment://procurando.png")
-    embed.set_footer(text="AR2 Brasil [BR] • Procurando partida")
-
     return embed
 
 
-def embed_cancelada():
-    return discord.Embed(
-        title="❌ PARTIDA CANCELADA!",
-        description="A partida foi cancelada pelo responsável.",
-        color=discord.Color.red()
-    )
+# ===== TIMES =====
+def montar_times(j):
+    random.shuffle(j)
+    metade = len(j)//2
+    return j[:metade], j[metade:]
 
 
-def montar_times(jogadores):
-    random.shuffle(jogadores)
-
-    vermelho = []
-    azul = []
-    usados = set()
-
-    for jogador in jogadores:
-        if jogador in usados:
-            continue
-
-        parceiro = duplas.get(jogador)
-
-        if parceiro and parceiro in jogadores and parceiro not in usados:
-            if len(vermelho) <= len(azul):
-                vermelho.extend([jogador, parceiro])
-            else:
-                azul.extend([jogador, parceiro])
-
-            usados.add(jogador)
-            usados.add(parceiro)
-        else:
-            if len(vermelho) <= len(azul):
-                vermelho.append(jogador)
-            else:
-                azul.append(jogador)
-
-            usados.add(jogador)
-
-    for a, b in rivais:
-        if a in jogadores and b in jogadores:
-            if a in vermelho and b in vermelho:
-                vermelho.remove(b)
-                azul.append(b)
-            elif a in azul and b in azul:
-                azul.remove(b)
-                vermelho.append(b)
-
-    return vermelho, azul
-
-
+# ===== BOTÕES =====
 class Painel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="Entrar", style=discord.ButtonStyle.green)
-    async def entrar(self, interaction, button):
-        if interaction.user.id in fila:
-            return await interaction.response.send_message("Você já entrou!", ephemeral=True)
+    async def entrar(self, i, b):
+        if i.user.id in fila:
+            return await i.response.send_message("Já entrou", ephemeral=True)
 
-        if len(fila) >= limite:
-            return await interaction.response.send_message("Partida cheia!", ephemeral=True)
-
-        fila.append(interaction.user.id)
+        fila.append(i.user.id)
 
         file = discord.File("procurando.png", filename="procurando.png")
-        embed = embed_procurando(interaction.guild)
+        embed = embed_procurando(i.guild)
 
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self,
-            attachments=[file]
-        )
+        await i.response.edit_message(embed=embed, view=self, attachments=[file])
 
         if len(fila) >= limite:
-            await iniciar_partida(interaction.guild)
+            await iniciar_partida(i.guild)
 
     @discord.ui.button(label="Sair", style=discord.ButtonStyle.red)
-    async def sair(self, interaction, button):
-        if interaction.user.id not in fila:
-            return await interaction.response.send_message("Você não está na partida.", ephemeral=True)
+    async def sair(self, i, b):
+        if i.user.id not in fila:
+            return
 
-        fila.remove(interaction.user.id)
+        fila.remove(i.user.id)
 
         file = discord.File("procurando.png", filename="procurando.png")
-        embed = embed_procurando(interaction.guild)
+        embed = embed_procurando(i.guild)
 
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self,
-            attachments=[file]
-        )
-
-    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.gray)
-    async def cancelar(self, interaction, button):
-        global criador_partida, link_partida, partida_ativa, painel_partida
-
-        if not pode_cancelar(interaction.user):
-            return await interaction.response.send_message(
-                embed=embed_erro("Você não possui permissão para cancelar essa partida!"),
-                ephemeral=True
-            )
-
-        fila.clear()
-        duplas.clear()
-        convites.clear()
-        rivais.clear()
-
-        criador_partida = None
-        link_partida = None
-        partida_ativa = False
-        painel_partida = None
-
-        await interaction.response.edit_message(
-            embed=embed_cancelada(),
-            view=None,
-            attachments=[]
-        )
+        await i.response.edit_message(embed=embed, view=self, attachments=[file])
 
 
-class ConviteView(discord.ui.View):
-    def __init__(self, quem_chamou, convidado):
-        super().__init__(timeout=60)
-        self.quem_chamou = quem_chamou
-        self.convidado = convidado
-
-    @discord.ui.button(label="Aceitar", style=discord.ButtonStyle.green)
-    async def aceitar(self, interaction, button):
-        if interaction.user.id != self.convidado:
-            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
-
-        duplas[self.quem_chamou] = self.convidado
-        duplas[self.convidado] = self.quem_chamou
-        convites.pop(self.convidado, None)
-
-        await interaction.response.edit_message(
-            content=f"✅ <@{self.convidado}> aceitou! Vai cair no mesmo time de <@{self.quem_chamou}>.",
-            view=None
-        )
-
-    @discord.ui.button(label="Recusar", style=discord.ButtonStyle.red)
-    async def recusar(self, interaction, button):
-        if interaction.user.id != self.convidado:
-            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
-
-        rivais.add(tuple(sorted((self.quem_chamou, self.convidado))))
-        convites.pop(self.convidado, None)
-
-        await interaction.response.edit_message(
-            content=f"❌ <@{self.convidado}> recusou! Vai cair contra <@{self.quem_chamou}>.",
-            view=None
-        )
-
-
+# ===== INICIAR PARTIDA =====
 async def iniciar_partida(guild):
-    global criador_partida, link_partida, partida_ativa, painel_partida
+    global ultimo_time_azul, ultimo_time_vermelho, ultimo_host, ultimo_modo
 
-    if partida_ativa or not link_partida or len(fila) < limite:
-        return
+    canal = discord.utils.get(guild.text_channels, name="partidas")
 
-    partida_ativa = True
+    azul, vermelho = montar_times(fila.copy())
 
-    jogadores = fila[:limite]
-    vermelho, azul = montar_times(jogadores)
-
-    host = guild.get_member(criador_partida)
-    nome_host = host.display_name if host else "Host"
-    id_partida = random.randint(100, 9999)
-    codigo = pegar_codigo_roblox(link_partida)
+    ultimo_time_azul = azul
+    ultimo_time_vermelho = vermelho
+    ultimo_host = criador_partida
+    ultimo_modo = f"{limite//2}v{limite//2}"
 
     embed = discord.Embed(
         title="⚔️ PARTIDA EM ANDAMENTO",
-        description=f"A partida **#{id_partida}** foi criada! Link enviado na DM.",
         color=discord.Color.dark_red()
     )
 
-    embed.set_author(
-        name=f"Hoster Responsável: {nome_host}",
-        icon_url=host.display_avatar.url if host else None
-    )
+    embed.add_field(name="🟦 Azul", value="\n".join([f"<@{x}>" for x in azul]))
+    embed.add_field(name="🟥 Vermelho", value="\n".join([f"<@{x}>" for x in vermelho]))
 
-    embed.add_field(
-        name="🟦 TIME AZUL",
-        value="\n".join([f"<@{j}>" for j in azul]) if azul else "Vazio",
-        inline=True
-    )
+    await painel_partida.edit(embed=embed, view=None, attachments=[])
 
-    embed.add_field(
-        name="🟥 TIME VERMELHO",
-        value="\n".join([f"<@{j}>" for j in vermelho]) if vermelho else "Vazio",
-        inline=True
-    )
-
-    embed.add_field(
-        name="📋 INFO",
-        value=(
-            f"ID: `#{id_partida}`\n"
-            f"MODO: `{limite//2}v{limite//2}`\n"
-            f"HOST: `{nome_host}`"
-        ),
-        inline=False
-    )
-
-    embed.set_footer(text="AR2 Brasil [BR] • Partida iniciada")
-
-    if painel_partida:
-        await painel_partida.edit(embed=embed, view=None, attachments=[])
-
-    for player_id in jogadores:
-        user = await bot.fetch_user(player_id)
+    for p in fila:
+        user = await bot.fetch_user(p)
         try:
-            await user.send(
-                f"🎮 **Partida começou!**\n\n"
-                f"**Link do servidor privado:**\n{link_partida}\n\n"
-                f"**Código:**\n```{codigo}```"
-            )
+            await user.send(f"Link: {link_partida}\nCódigo: {pegar_codigo(link_partida)}")
         except:
-            print(f"Erro ao enviar DM para {player_id}")
+            pass
 
     fila.clear()
-    duplas.clear()
-    convites.clear()
-    rivais.clear()
-
-    criador_partida = None
-    link_partida = None
-    partida_ativa = False
-    painel_partida = None
 
 
+# ===== EVENTOS =====
 @bot.event
 async def on_ready():
-    print(f"Bot online: {bot.user}")
+    print("Online")
 
 
 @bot.event
-async def on_message(message):
+async def on_message(msg):
     global limite, criador_partida, link_partida, painel_partida
 
-    if message.author == bot.user:
+    if msg.author.bot:
         return
 
-    if message.content.startswith("!criarfila"):
-        if not pode_criar(message.author):
-            return await message.reply(
-                embed=embed_erro("Você não possui permissão para criar uma partida!")
-            )
+    # criar partida
+    if msg.content.startswith("!criarfila"):
+        if not tem_cargo(msg.author):
+            return await msg.reply(embed=embed_erro("Sem permissão"))
 
-        canal = discord.utils.get(message.guild.text_channels, name="partidas")
+        canal = discord.utils.get(msg.guild.text_channels, name="partidas")
 
-        if canal is None:
-            return await message.reply("Não achei o canal #partidas.")
-
-        partes = message.content.split(" ")
-
-        if len(partes) < 2:
-            return await message.reply("Use: `!criarfila4 link_do_servidor_privado`")
-
-        comando = partes[0]
-        link = partes[1]
-
-        try:
-            numero = int(comando.replace("!criarfila", ""))
-        except:
-            return await message.reply("Use: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
-
-        if numero not in [2, 4, 6, 8, 10]:
-            return await message.reply("Use apenas: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
+        partes = msg.content.split()
+        numero = int(partes[0].replace("!criarfila",""))
 
         fila.clear()
-        duplas.clear()
-        convites.clear()
-        rivais.clear()
-
         limite = numero
-        criador_partida = message.author.id
-        link_partida = link
+        criador_partida = msg.author.id
+        link_partida = partes[1]
 
         file = discord.File("procurando.png", filename="procurando.png")
-        embed = embed_procurando(message.guild)
+        embed = embed_procurando(msg.guild)
 
-        painel_partida = await canal.send(
-            embed=embed,
-            view=Painel(),
-            file=file
+        painel_partida = await canal.send(embed=embed, view=Painel(), file=file)
+
+        await msg.reply("Criado")
+
+    # vitória
+    elif msg.content.startswith("!vitória"):
+        cmd = msg.content.lower()
+
+        if "azul" in cmd:
+            vencedores = ultimo_time_azul
+            perdedores = ultimo_time_vermelho
+            img = "vitoria_azul.png"
+            cor = discord.Color.blue()
+
+        elif "vermelho" in cmd:
+            vencedores = ultimo_time_vermelho
+            perdedores = ultimo_time_azul
+            img = "vitoria_vermelho.png"
+            cor = discord.Color.red()
+
+        else:
+            return
+
+        for v in vencedores:
+            adicionar_vitoria(v)
+
+        for p in perdedores:
+            remover_vitoria(p)
+
+        embed = discord.Embed(
+            title="🏆 PARTIDA FINALIZADA",
+            color=cor
         )
 
-        await message.reply("Partida criada!")
+        embed.add_field(name="🏆 Vencedores", value="\n".join([f"<@{x}>" for x in vencedores]))
+        embed.add_field(name="💀 Perdedor", value="\n".join([f"<@{x}>" for x in perdedores]))
+        embed.add_field(name="Modo", value=ultimo_modo)
 
-    elif message.content.startswith("!equipe"):
-        mencionado = message.mentions.users.first()
+        file = discord.File(img, filename=img)
+        embed.set_image(url=f"attachment://{img}")
 
-        if not mencionado:
-            return await message.reply("Use: `!equipe @jogador`")
+        await msg.channel.send(embed=embed, file=file)
 
-        if mencionado.id == message.author.id:
-            return await message.reply("Você não pode chamar você mesmo.")
+    # ranking
+    elif msg.content == "!ranking":
+        data = carregar_ranking()
 
-        if message.author.id not in fila or mencionado.id not in fila:
-            return await message.reply("Os dois jogadores precisam estar na partida.")
+        top = sorted(data.items(), key=lambda x: x[1], reverse=True)
 
-        convites[mencionado.id] = message.author.id
+        texto = ""
+        for i,(uid,pts) in enumerate(top[:10],1):
+            texto += f"{i}. <@{uid}> - {pts}\n"
 
-        await message.channel.send(
-            f"{mencionado.mention}, {message.author.mention} quer cair no seu time.",
-            view=ConviteView(message.author.id, mencionado.id)
-        )
+        embed = discord.Embed(title="🏆 Ranking", description=texto or "Vazio", color=discord.Color.gold())
+        await msg.channel.send(embed=embed)
 
 
 bot.run(TOKEN)
