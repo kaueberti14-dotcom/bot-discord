@@ -22,8 +22,6 @@ convites = {}
 duplas = {}
 rivais = set()
 
-BANNER_URL = "https://cdn.discordapp.com/attachments/1499960741221105676/1500327739750875268/image.png"
-
 
 def embed_erro(texto):
     return discord.Embed(
@@ -92,7 +90,7 @@ def embed_procurando(guild):
         inline=False
     )
 
-    embed.set_image(url=BANNER_URL)
+    embed.set_image(url="attachment://procurando.png")
     embed.set_footer(text="AR2 Brasil [BR] • Procurando partida")
 
     return embed
@@ -161,9 +159,13 @@ class Painel(discord.ui.View):
 
         fila.append(interaction.user.id)
 
+        file = discord.File("procurando.png", filename="procurando.png")
+        embed = embed_procurando(interaction.guild)
+
         await interaction.response.edit_message(
-            embed=embed_procurando(interaction.guild),
-            view=self
+            embed=embed,
+            view=self,
+            attachments=[file]
         )
 
         if len(fila) >= limite:
@@ -176,9 +178,13 @@ class Painel(discord.ui.View):
 
         fila.remove(interaction.user.id)
 
+        file = discord.File("procurando.png", filename="procurando.png")
+        embed = embed_procurando(interaction.guild)
+
         await interaction.response.edit_message(
-            embed=embed_procurando(interaction.guild),
-            view=self
+            embed=embed,
+            view=self,
+            attachments=[file]
         )
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.gray)
@@ -203,7 +209,8 @@ class Painel(discord.ui.View):
 
         await interaction.response.edit_message(
             embed=embed_cancelada(),
-            view=None
+            view=None,
+            attachments=[]
         )
 
 
@@ -290,11 +297,10 @@ async def iniciar_partida(guild):
         inline=False
     )
 
-    embed.set_image(url=BANNER_URL)
     embed.set_footer(text="AR2 Brasil [BR] • Partida iniciada")
 
     if painel_partida:
-        await painel_partida.edit(embed=embed, view=None)
+        await painel_partida.edit(embed=embed, view=None, attachments=[])
 
     for player_id in jogadores:
         user = await bot.fetch_user(player_id)
@@ -366,9 +372,13 @@ async def on_message(message):
         criador_partida = message.author.id
         link_partida = link
 
+        file = discord.File("procurando.png", filename="procurando.png")
+        embed = embed_procurando(message.guild)
+
         painel_partida = await canal.send(
-            embed=embed_procurando(message.guild),
-            view=Painel()
+            embed=embed,
+            view=Painel(),
+            file=file
         )
 
         await message.reply("Partida criada!")
