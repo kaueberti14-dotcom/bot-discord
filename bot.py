@@ -33,6 +33,8 @@ duplas = {}
 rivais = set()
 
 
+# ================= RANKING =================
+
 def carregar_ranking():
     try:
         with open("ranking.json", "r") as f:
@@ -55,19 +57,21 @@ def get_player(data, uid):
 
 def adicionar_vitoria(uid):
     data = carregar_ranking()
-    player = get_player(data, uid)
-    player["wins"] += 1
-    player["streak"] += 1
+    p = get_player(data, uid)
+    p["wins"] += 1
+    p["streak"] += 1
     salvar_ranking(data)
 
 
 def adicionar_derrota(uid):
     data = carregar_ranking()
-    player = get_player(data, uid)
-    player["losses"] += 1
-    player["streak"] = 0
+    p = get_player(data, uid)
+    p["losses"] += 1
+    p["streak"] = 0
     salvar_ranking(data)
 
+
+# ================= FUNÇÕES =================
 
 def embed_erro(texto):
     return discord.Embed(
@@ -83,6 +87,14 @@ def canal_correto(msg, nome):
 
 def tem_cargo(member):
     return any(role.name in ["HOST", "Lider", "Sub-Lider"] for role in member.roles)
+
+
+def eh_lider_ou_sub(member):
+    return any(role.name in ["Lider", "Sub-Lider"] for role in member.roles)
+
+
+def eh_host(member):
+    return any(role.name == "HOST" for role in member.roles)
 
 
 def pegar_codigo(link):
@@ -113,7 +125,11 @@ def embed_procurando(guild):
         icon_url=host.display_avatar.url if host else None
     )
 
-    embed.add_field(name="👥 JOGADORES", value=lista_jogadores(), inline=False)
+    embed.add_field(
+        name="👥 JOGADORES",
+        value=lista_jogadores(),
+        inline=False
+    )
 
     embed.add_field(
         name="📋 INFO",
@@ -133,7 +149,7 @@ def embed_procurando(guild):
 def embed_cancelada():
     return discord.Embed(
         title="❌ PARTIDA CANCELADA!",
-        description="A partida foi cancelada pelo responsável.",
+        description="A partida foi cancelada.",
         color=discord.Color.red()
     )
 
@@ -178,6 +194,8 @@ def montar_times(jogadores):
 
     return vermelho, azul
 
+
+# ================= PAINEL =================
 
 class Painel(discord.ui.View):
     def __init__(self):
@@ -234,9 +252,13 @@ class Painel(discord.ui.View):
     async def cancelar(self, interaction, button):
         global criador_partida, link_partida, painel_partida
 
-        lider_ou_sub = any(role.name in ["Lider", "Sub-Lider"] for role in interaction.user.roles)
+        if interaction.user.id != criador_partida and eh_host(interaction.user) and not eh_lider_ou_sub(interaction.user):
+            return await interaction.response.send_message(
+                embed=embed_erro("Você não possui permissão para cancelar partida de outros Host"),
+                ephemeral=True
+            )
 
-        if interaction.user.id != criador_partida and not lider_ou_sub:
+        if interaction.user.id != criador_partida and not eh_lider_ou_sub(interaction.user):
             return await interaction.response.send_message(
                 embed=embed_erro("Você não possui permissão para cancelar essa partida!"),
                 ephemeral=True
@@ -257,6 +279,8 @@ class Painel(discord.ui.View):
             attachments=[]
         )
 
+
+# ================= EQUIPE =================
 
 class ConviteView(discord.ui.View):
     def __init__(self, quem_chamou, convidado):
@@ -298,12 +322,13 @@ class ConviteView(discord.ui.View):
         )
 
 
+# ================= INICIAR PARTIDA =================
+
 async def iniciar_partida(guild):
     global ultimo_time_azul, ultimo_time_vermelho, ultimo_host, ultimo_modo
     global criador_partida, link_partida, painel_partida
 
     jogadores = fila.copy()
-
     vermelho, azul = montar_times(jogadores)
 
     ultimo_time_azul = azul
@@ -346,11 +371,15 @@ async def iniciar_partida(guild):
         inline=False
     )
 
+    file = discord.File("partida.png", filename="partida.png")
+    embed.set_image(url="attachment://partida.png")
+    embed.set_footer(text="AR2 Brasil [BR] • Partida iniciada")
+
     if painel_partida:
         await painel_partida.edit(
             embed=embed,
             view=None,
-            attachments=[]
+            attachments=[file]
         )
 
     codigo = pegar_codigo(link_partida)
@@ -370,6 +399,8 @@ async def iniciar_partida(guild):
     fila.clear()
 
 
+# ================= EVENTOS =================
+
 @bot.event
 async def on_ready():
     print(f"Bot online: {bot.user}")
@@ -382,6 +413,7 @@ async def on_message(msg):
     if msg.author.bot:
         return
 
+    # criar partida
     if msg.content.startswith("!partida"):
         if not canal_correto(msg, CANAL_COMANDOS):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_COMANDOS}")
@@ -436,6 +468,7 @@ async def on_message(msg):
 
         await msg.reply("Partida criada!")
 
+    # equipe
     elif msg.content.startswith("!equipe"):
         if not canal_correto(msg, CANAL_EQUIPE):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_EQUIPE}")
@@ -465,6 +498,7 @@ async def on_message(msg):
 
         await msg.reply("Convite enviado!")
 
+    # vitória
     elif msg.content.lower().startswith("!vitória"):
         if not tem_cargo(msg.author):
             return await msg.reply(
@@ -498,11 +532,16 @@ async def on_message(msg):
         if not vencedores:
             return await msg.reply("Nenhuma partida registrada ainda.")
 
+        ganhos = []
+        perdas = []
+
         for jogador in vencedores:
             adicionar_vitoria(jogador)
+            ganhos.append(f"<@{jogador}> ➜ +1 Vitória 🏆")
 
         for jogador in perdedores:
             adicionar_derrota(jogador)
+            perdas.append(f"<@{jogador}> ➜ -1 Vitória 💀")
 
         host = msg.guild.get_member(ultimo_host)
         nome_host = host.display_name if host else "Host"
@@ -520,13 +559,13 @@ async def on_message(msg):
 
         embed.add_field(
             name="🏆 VENCEDORES",
-            value="\n".join([f"<@{x}>" for x in vencedores]) if vencedores else "Vazio",
+            value="\n".join(ganhos) if ganhos else "Vazio",
             inline=False
         )
 
         embed.add_field(
             name="💀 PERDEDORES",
-            value="\n".join([f"<@{x}>" for x in perdedores]) if perdedores else "Vazio",
+            value="\n".join(perdas) if perdas else "Vazio",
             inline=False
         )
 
@@ -544,6 +583,7 @@ async def on_message(msg):
 
         await canal.send(embed=embed, file=file)
 
+    # ranking
     elif msg.content.startswith("!ranking"):
         if not canal_correto(msg, CANAL_RANKING):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_RANKING}")
