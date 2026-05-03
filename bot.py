@@ -12,6 +12,11 @@ intents.members = True
 
 bot = discord.Client(intents=intents)
 
+CANAL_COMANDOS = "comandos-🤖"
+CANAL_PARTIDAS = "partidas-🔫"
+CANAL_EQUIPE = "equipe🤝"
+CANAL_RANKING = "ranking🏆"
+
 fila = []
 limite = 4
 criador_partida = None
@@ -28,8 +33,6 @@ duplas = {}
 rivais = set()
 
 
-# ================= RANKING =================
-
 def carregar_ranking():
     try:
         with open("ranking.json", "r") as f:
@@ -45,38 +48,26 @@ def salvar_ranking(data):
 
 def get_player(data, uid):
     uid = str(uid)
-
     if uid not in data:
-        data[uid] = {
-            "wins": 0,
-            "losses": 0,
-            "streak": 0
-        }
-
+        data[uid] = {"wins": 0, "losses": 0, "streak": 0}
     return data[uid]
 
 
 def adicionar_vitoria(uid):
     data = carregar_ranking()
     player = get_player(data, uid)
-
     player["wins"] += 1
     player["streak"] += 1
-
     salvar_ranking(data)
 
 
 def adicionar_derrota(uid):
     data = carregar_ranking()
     player = get_player(data, uid)
-
     player["losses"] += 1
     player["streak"] = 0
-
     salvar_ranking(data)
 
-
-# ================= FUNÇÕES =================
 
 def embed_erro(texto):
     return discord.Embed(
@@ -84,6 +75,10 @@ def embed_erro(texto):
         description=texto,
         color=discord.Color.red()
     )
+
+
+def canal_correto(msg, nome):
+    return msg.channel.name == nome
 
 
 def tem_cargo(member):
@@ -100,7 +95,6 @@ def pegar_codigo(link):
 def lista_jogadores():
     if not fila:
         return "Nenhum jogador."
-
     return "\n".join([f"`{i+1}.` <@{j}>" for i, j in enumerate(fila)])
 
 
@@ -119,11 +113,7 @@ def embed_procurando(guild):
         icon_url=host.display_avatar.url if host else None
     )
 
-    embed.add_field(
-        name="👥 JOGADORES",
-        value=lista_jogadores(),
-        inline=False
-    )
+    embed.add_field(name="👥 JOGADORES", value=lista_jogadores(), inline=False)
 
     embed.add_field(
         name="📋 INFO",
@@ -137,7 +127,6 @@ def embed_procurando(guild):
 
     embed.set_image(url="attachment://procurando.png")
     embed.set_footer(text="AR2 Brasil [BR] • Procurando partida")
-
     return embed
 
 
@@ -170,7 +159,6 @@ def montar_times(jogadores):
 
             usados.add(jogador)
             usados.add(parceiro)
-
         else:
             if len(vermelho) <= len(azul):
                 vermelho.append(jogador)
@@ -184,15 +172,12 @@ def montar_times(jogadores):
             if a in vermelho and b in vermelho:
                 vermelho.remove(b)
                 azul.append(b)
-
             elif a in azul and b in azul:
                 azul.remove(b)
                 vermelho.append(b)
 
     return vermelho, azul
 
-
-# ================= PAINEL PARTIDA =================
 
 class Painel(discord.ui.View):
     def __init__(self):
@@ -273,8 +258,6 @@ class Painel(discord.ui.View):
         )
 
 
-# ================= SISTEMA DE EQUIPE =================
-
 class ConviteView(discord.ui.View):
     def __init__(self, quem_chamou, convidado):
         super().__init__(timeout=60)
@@ -314,8 +297,6 @@ class ConviteView(discord.ui.View):
             view=None
         )
 
-
-# ================= INICIAR PARTIDA =================
 
 async def iniciar_partida(guild):
     global ultimo_time_azul, ultimo_time_vermelho, ultimo_host, ultimo_modo
@@ -389,8 +370,6 @@ async def iniciar_partida(guild):
     fila.clear()
 
 
-# ================= EVENTOS =================
-
 @bot.event
 async def on_ready():
     print(f"Bot online: {bot.user}")
@@ -403,17 +382,19 @@ async def on_message(msg):
     if msg.author.bot:
         return
 
-    # criar partida
     if msg.content.startswith("!partida"):
+        if not canal_correto(msg, CANAL_COMANDOS):
+            return await msg.reply(f"❌ Use este comando no canal #{CANAL_COMANDOS}")
+
         if not tem_cargo(msg.author):
             return await msg.reply(
                 embed=embed_erro("Você não possui permissão para criar uma partida!")
             )
 
-        canal = discord.utils.get(msg.guild.text_channels, name="partidas")
+        canal = discord.utils.get(msg.guild.text_channels, name=CANAL_PARTIDAS)
 
         if canal is None:
-            return await msg.reply("Não achei o canal #partidas.")
+            return await msg.reply(f"Não achei o canal #{CANAL_PARTIDAS}.")
 
         partes = msg.content.split()
 
@@ -455,8 +436,10 @@ async def on_message(msg):
 
         await msg.reply("Partida criada!")
 
-    # sistema equipe
     elif msg.content.startswith("!equipe"):
+        if not canal_correto(msg, CANAL_EQUIPE):
+            return await msg.reply(f"❌ Use este comando no canal #{CANAL_EQUIPE}")
+
         mencionado = msg.mentions[0] if msg.mentions else None
 
         if not mencionado:
@@ -468,10 +451,10 @@ async def on_message(msg):
         if msg.author.id not in fila or mencionado.id not in fila:
             return await msg.reply("Os dois jogadores precisam estar na partida.")
 
-        canal_equipes = discord.utils.get(msg.guild.text_channels, name="equipes")
+        canal_equipes = discord.utils.get(msg.guild.text_channels, name=CANAL_EQUIPE)
 
         if canal_equipes is None:
-            return await msg.reply("Não achei o canal #equipes.")
+            return await msg.reply(f"Não achei o canal #{CANAL_EQUIPE}.")
 
         convites[mencionado.id] = msg.author.id
 
@@ -480,19 +463,18 @@ async def on_message(msg):
             view=ConviteView(msg.author.id, mencionado.id)
         )
 
-        await msg.reply("Convite enviado no canal #equipes!")
+        await msg.reply("Convite enviado!")
 
-    # vitória
     elif msg.content.lower().startswith("!vitória"):
         if not tem_cargo(msg.author):
             return await msg.reply(
                 embed=embed_erro("Você não possui permissão para finalizar essa partida!")
             )
 
-        canal = discord.utils.get(msg.guild.text_channels, name="partidas")
+        canal = discord.utils.get(msg.guild.text_channels, name=CANAL_PARTIDAS)
 
         if canal is None:
-            return await msg.reply("Não achei o canal #partidas.")
+            return await msg.reply(f"Não achei o canal #{CANAL_PARTIDAS}.")
 
         comando = msg.content.lower()
 
@@ -562,8 +544,10 @@ async def on_message(msg):
 
         await canal.send(embed=embed, file=file)
 
-    # ranking pessoal
     elif msg.content.startswith("!ranking"):
+        if not canal_correto(msg, CANAL_RANKING):
+            return await msg.reply(f"❌ Use este comando no canal #{CANAL_RANKING}")
+
         data = carregar_ranking()
 
         user = msg.mentions[0] if msg.mentions else msg.author
