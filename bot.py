@@ -16,14 +16,15 @@ limite = 4
 criador_partida = None
 link_partida = None
 partida_ativa = False
+painel_partida = None
 
 convites = {}
 duplas = {}
 rivais = set()
-painel_fila = None
+
+BANNER_URL = "https://assets.grok.com/users/146b3868-5f96-4065-839b-e505888ecbaa/generated/46a070ef-ee23-421d-acb7-a7b228078557/image.png"
 
 
-# ===== EMBED ERRO =====
 def embed_erro(texto):
     return discord.Embed(
         title="❌ Erro",
@@ -32,7 +33,6 @@ def embed_erro(texto):
     )
 
 
-# ===== PERMISSÕES =====
 def tem_cargo(member, nomes):
     return any(role.name in nomes for role in member.roles)
 
@@ -47,7 +47,6 @@ def pode_cancelar(member):
     return tem_cargo(member, ["Lider", "Sub-Lider"])
 
 
-# ===== ROBLOX =====
 def pegar_codigo_roblox(link):
     try:
         query = parse_qs(urlparse(link).query)
@@ -56,27 +55,98 @@ def pegar_codigo_roblox(link):
         return "Não encontrado"
 
 
-# ===== TEXTO =====
-def texto_partida():
-    jogadores = "\n".join([f"{i+1}. <@{j}>" for i, j in enumerate(fila)]) if fila else "Nenhum jogador."
-    criador = f"<@{criador_partida}>" if criador_partida else "Nenhum"
+def lista_jogadores():
+    if not fila:
+        return "Nenhum jogador."
+    return "\n".join([f"`{i+1}.` <@{j}>" for i, j in enumerate(fila)])
 
-    return (
-        f"🎮 **PROCURANDO PARTIDA...**\n\n"
-        f"👑 Criador: {criador}\n"
-        f"👥 Jogadores: **{len(fila)}/{limite}**\n\n"
-        f"{jogadores}"
+
+def embed_procurando(guild):
+    host = guild.get_member(criador_partida)
+    nome_host = host.display_name if host else "Host"
+
+    embed = discord.Embed(
+        title="🔎 PROCURANDO PARTIDA...",
+        description="Aguardando jogadores entrarem na partida.",
+        color=discord.Color.dark_red()
+    )
+
+    embed.set_author(
+        name=f"Hoster Responsável: {nome_host}",
+        icon_url=host.display_avatar.url if host else None
+    )
+
+    embed.add_field(
+        name="👥 JOGADORES",
+        value=lista_jogadores(),
+        inline=False
+    )
+
+    embed.add_field(
+        name="📋 INFO",
+        value=(
+            f"MODO: `{limite//2}v{limite//2}`\n"
+            f"JOGADORES: `{len(fila)}/{limite}`\n"
+            f"HOST: `{nome_host}`"
+        ),
+        inline=False
+    )
+
+    embed.set_image(url=BANNER_URL)
+    embed.set_footer(text="AR2 Brasil [BR] • Procurando partida")
+
+    return embed
+
+
+def embed_cancelada():
+    return discord.Embed(
+        title="❌ PARTIDA CANCELADA!",
+        description="A partida foi cancelada pelo responsável.",
+        color=discord.Color.red()
     )
 
 
-# ===== TIMES =====
 def montar_times(jogadores):
     random.shuffle(jogadores)
-    metade = len(jogadores) // 2
-    return jogadores[:metade], jogadores[metade:]
+
+    vermelho = []
+    azul = []
+    usados = set()
+
+    for jogador in jogadores:
+        if jogador in usados:
+            continue
+
+        parceiro = duplas.get(jogador)
+
+        if parceiro and parceiro in jogadores and parceiro not in usados:
+            if len(vermelho) <= len(azul):
+                vermelho.extend([jogador, parceiro])
+            else:
+                azul.extend([jogador, parceiro])
+
+            usados.add(jogador)
+            usados.add(parceiro)
+        else:
+            if len(vermelho) <= len(azul):
+                vermelho.append(jogador)
+            else:
+                azul.append(jogador)
+
+            usados.add(jogador)
+
+    for a, b in rivais:
+        if a in jogadores and b in jogadores:
+            if a in vermelho and b in vermelho:
+                vermelho.remove(b)
+                azul.append(b)
+            elif a in azul and b in azul:
+                azul.remove(b)
+                vermelho.append(b)
+
+    return vermelho, azul
 
 
-# ===== BOTÕES =====
 class Painel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -90,7 +160,11 @@ class Painel(discord.ui.View):
             return await interaction.response.send_message("Partida cheia!", ephemeral=True)
 
         fila.append(interaction.user.id)
-        await interaction.response.edit_message(content=texto_partida(), view=self)
+
+        await interaction.response.edit_message(
+            embed=embed_procurando(interaction.guild),
+            view=self
+        )
 
         if len(fila) >= limite:
             await iniciar_partida(interaction.guild)
@@ -101,11 +175,15 @@ class Painel(discord.ui.View):
             return await interaction.response.send_message("Você não está na partida.", ephemeral=True)
 
         fila.remove(interaction.user.id)
-        await interaction.response.edit_message(content=texto_partida(), view=self)
+
+        await interaction.response.edit_message(
+            embed=embed_procurando(interaction.guild),
+            view=self
+        )
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.gray)
     async def cancelar(self, interaction, button):
-        global fila, criador_partida, link_partida
+        global criador_partida, link_partida, partida_ativa, painel_partida
 
         if not pode_cancelar(interaction.user):
             return await interaction.response.send_message(
@@ -114,18 +192,57 @@ class Painel(discord.ui.View):
             )
 
         fila.clear()
+        duplas.clear()
+        convites.clear()
+        rivais.clear()
+
         criador_partida = None
         link_partida = None
+        partida_ativa = False
+        painel_partida = None
 
         await interaction.response.edit_message(
-            content="❌ **PARTIDA CANCELADA!**",
+            embed=embed_cancelada(),
             view=None
         )
 
 
-# ===== INICIAR PARTIDA =====
+class ConviteView(discord.ui.View):
+    def __init__(self, quem_chamou, convidado):
+        super().__init__(timeout=60)
+        self.quem_chamou = quem_chamou
+        self.convidado = convidado
+
+    @discord.ui.button(label="Aceitar", style=discord.ButtonStyle.green)
+    async def aceitar(self, interaction, button):
+        if interaction.user.id != self.convidado:
+            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
+
+        duplas[self.quem_chamou] = self.convidado
+        duplas[self.convidado] = self.quem_chamou
+        convites.pop(self.convidado, None)
+
+        await interaction.response.edit_message(
+            content=f"✅ <@{self.convidado}> aceitou! Vai cair no mesmo time de <@{self.quem_chamou}>.",
+            view=None
+        )
+
+    @discord.ui.button(label="Recusar", style=discord.ButtonStyle.red)
+    async def recusar(self, interaction, button):
+        if interaction.user.id != self.convidado:
+            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
+
+        rivais.add(tuple(sorted((self.quem_chamou, self.convidado))))
+        convites.pop(self.convidado, None)
+
+        await interaction.response.edit_message(
+            content=f"❌ <@{self.convidado}> recusou! Vai cair contra <@{self.quem_chamou}>.",
+            view=None
+        )
+
+
 async def iniciar_partida(guild):
-    global fila, criador_partida, link_partida, partida_ativa, painel_fila
+    global criador_partida, link_partida, partida_ativa, painel_partida
 
     if partida_ativa or not link_partida or len(fila) < limite:
         return
@@ -133,22 +250,21 @@ async def iniciar_partida(guild):
     partida_ativa = True
 
     canal = discord.utils.get(guild.text_channels, name="partidas")
+    if canal is None:
+        partida_ativa = False
+        return
 
     jogadores = fila[:limite]
-    t1, t2 = montar_times(jogadores)
-
-    if painel_fila:
-        await painel_fila.edit(content="🎮 **PARTIDA EM ANDAMENTO!**", view=None)
+    vermelho, azul = montar_times(jogadores)
 
     host = guild.get_member(criador_partida)
     nome_host = host.display_name if host else "Host"
-
     id_partida = random.randint(100, 9999)
     codigo = pegar_codigo_roblox(link_partida)
 
     embed = discord.Embed(
         title="⚔️ PARTIDA EM ANDAMENTO",
-        description=f"A partida **#{id_partida}** foi criada! Link na DM.",
+        description=f"A partida **#{id_partida}** foi criada! Link enviado na DM.",
         color=discord.Color.dark_red()
     )
 
@@ -159,13 +275,13 @@ async def iniciar_partida(guild):
 
     embed.add_field(
         name="🟦 TIME AZUL",
-        value="\n".join([f"<@{j}>" for j in t2]),
+        value="\n".join([f"<@{j}>" for j in azul]) if azul else "Vazio",
         inline=True
     )
 
     embed.add_field(
         name="🟥 TIME VERMELHO",
-        value="\n".join([f"<@{j}>" for j in t1]),
+        value="\n".join([f"<@{j}>" for j in vermelho]) if vermelho else "Vazio",
         inline=True
     )
 
@@ -179,35 +295,36 @@ async def iniciar_partida(guild):
         inline=False
     )
 
-    # 🔥 SUA IMAGEM (BANNER)
-    embed.set_image(
-        url="https://assets.grok.com/users/146b3868-5f96-4065-839b-e505888ecbaa/generated/46a070ef-ee23-421d-acb7-a7b228078557/image.png"
-    )
-
+    embed.set_image(url=BANNER_URL)
     embed.set_footer(text="AR2 Brasil [BR] • Partida iniciada")
 
-    await canal.send(embed=embed)
+    if painel_partida:
+        await painel_partida.edit(embed=embed, view=None)
+    else:
+        await canal.send(embed=embed)
 
-    # 🔒 LINK SOMENTE NO PRIVADO
-    for p in jogadores:
-        user = await bot.fetch_user(p)
+    for player_id in jogadores:
+        user = await bot.fetch_user(player_id)
         try:
             await user.send(
                 f"🎮 **Partida começou!**\n\n"
-                f"Link:\n{link_partida}\n\n"
-                f"Código:\n```{codigo}```"
+                f"**Link do servidor privado:**\n{link_partida}\n\n"
+                f"**Código:**\n```{codigo}```"
             )
         except:
-            pass
+            print(f"Erro ao enviar DM para {player_id}")
 
     fila.clear()
+    duplas.clear()
+    convites.clear()
+    rivais.clear()
+
     criador_partida = None
     link_partida = None
     partida_ativa = False
-    painel_fila = None
+    painel_partida = None
 
 
-# ===== EVENTOS =====
 @bot.event
 async def on_ready():
     print(f"Bot online: {bot.user}")
@@ -215,20 +332,26 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    global fila, limite, criador_partida, link_partida, painel_fila
+    global limite, criador_partida, link_partida, painel_partida
 
     if message.author == bot.user:
         return
 
     if message.content.startswith("!criarfila"):
         if not pode_criar(message.author):
-            return await message.reply(embed=embed_erro("Você não possui permissão para criar uma partida!"))
+            return await message.reply(
+                embed=embed_erro("Você não possui permissão para criar uma partida!")
+            )
 
         canal = discord.utils.get(message.guild.text_channels, name="partidas")
 
+        if canal is None:
+            return await message.reply("Não achei o canal #partidas.")
+
         partes = message.content.split(" ")
+
         if len(partes) < 2:
-            return await message.reply("Use: !criarfila4 link")
+            return await message.reply("Use: `!criarfila4 link_do_servidor_privado`")
 
         comando = partes[0]
         link = partes[1]
@@ -236,15 +359,45 @@ async def on_message(message):
         try:
             numero = int(comando.replace("!criarfila", ""))
         except:
-            return
+            return await message.reply("Use: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
+
+        if numero not in [2, 4, 6, 8, 10]:
+            return await message.reply("Use apenas: `!criarfila2`, `!criarfila4`, `!criarfila6`, `!criarfila8` ou `!criarfila10`.")
 
         fila.clear()
+        duplas.clear()
+        convites.clear()
+        rivais.clear()
+
         limite = numero
         criador_partida = message.author.id
         link_partida = link
 
-        painel_fila = await canal.send(texto_partida(), view=Painel())
+        painel_partida = await canal.send(
+            embed=embed_procurando(message.guild),
+            view=Painel()
+        )
+
         await message.reply("Partida criada!")
+
+    elif message.content.startswith("!equipe"):
+        mencionado = message.mentions.users.first()
+
+        if not mencionado:
+            return await message.reply("Use: `!equipe @jogador`")
+
+        if mencionado.id == message.author.id:
+            return await message.reply("Você não pode chamar você mesmo.")
+
+        if message.author.id not in fila or mencionado.id not in fila:
+            return await message.reply("Os dois jogadores precisam estar na partida.")
+
+        convites[mencionado.id] = message.author.id
+
+        await message.channel.send(
+            f"{mencionado.mention}, {message.author.mention} quer cair no seu time.",
+            view=ConviteView(message.author.id, mencionado.id)
+        )
 
 
 bot.run(TOKEN)
