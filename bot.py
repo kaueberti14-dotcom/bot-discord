@@ -61,14 +61,13 @@ def pegar_codigo_roblox(link):
 
 
 def texto_fila():
-    jogadores = "\n".join([f"{i+1}. <@{j}>" for i, j in enumerate(fila)]) if fila else "Nenhum jogador na fila."
+    jogadores = "\n".join([f"{i+1}. <@{j}>" for i, j in enumerate(fila)]) if fila else "Nenhum jogador."
     criador = f"<@{criador_partida}>" if criador_partida else "Nenhum"
 
     return (
-        f"**Fila da Partida**\n"
-        f"Criador: {criador}\n"
-        f"Limite: **{limite} jogadores**\n"
-        f"Jogadores: **{len(fila)}/{limite}**\n\n"
+        f"🎮 **PROCURANDO PARTIDA...**\n\n"
+        f"👑 Criador: {criador}\n"
+        f"👥 Jogadores: **{len(fila)}/{limite}**\n\n"
         f"{jogadores}"
     )
 
@@ -86,11 +85,11 @@ class PainelFila(discord.ui.View):
     @discord.ui.button(label="Entrar", style=discord.ButtonStyle.green)
     async def entrar(self, interaction, button):
         if interaction.user.id in fila:
-            await interaction.response.send_message("Você já está na fila!", ephemeral=True)
+            await interaction.response.send_message("Você já está na partida!", ephemeral=True)
             return
 
         if len(fila) >= limite:
-            await interaction.response.send_message("Fila cheia!", ephemeral=True)
+            await interaction.response.send_message("A partida já está cheia!", ephemeral=True)
             return
 
         fila.append(interaction.user.id)
@@ -102,13 +101,13 @@ class PainelFila(discord.ui.View):
     @discord.ui.button(label="Sair", style=discord.ButtonStyle.red)
     async def sair(self, interaction, button):
         if interaction.user.id not in fila:
-            await interaction.response.send_message("Você não está na fila.", ephemeral=True)
+            await interaction.response.send_message("Você não está nessa partida.", ephemeral=True)
             return
 
         fila.remove(interaction.user.id)
         await interaction.response.edit_message(content=texto_fila(), view=self)
 
-    @discord.ui.button(label="Cancelar Fila", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Cancelar Partida", style=discord.ButtonStyle.gray)
     async def cancelar(self, interaction, button):
         global fila, criador_partida, link_partida
 
@@ -127,7 +126,7 @@ class PainelFila(discord.ui.View):
         link_partida = None
 
         await interaction.response.edit_message(
-            content="**FILA CANCELADA!**",
+            content="❌ **PARTIDA CANCELADA!**",
             view=None
         )
 
@@ -197,11 +196,11 @@ async def iniciar_partida(guild):
     time_vermelho, time_azul = montar_times(jogadores)
 
     if painel_fila:
-        await painel_fila.edit(content="**PARTIDA EM ANDAMENTO!**", view=None)
+        await painel_fila.edit(content="🎮 **PARTIDA EM ANDAMENTO!**", view=None)
 
     codigo = pegar_codigo_roblox(link_partida)
 
-    texto_times = "**PARTIDA EM ANDAMENTO!**\n\n"
+    texto_times = "🎮 **PARTIDA EM ANDAMENTO!**\n\n"
     texto_times += "🟥 **TIME VERMELHO:**\n"
     texto_times += "\n".join([f"<@{j}>" for j in time_vermelho])
     texto_times += "\n\n🟦 **TIME AZUL:**\n"
@@ -299,7 +298,7 @@ async def on_message(message):
         rivais.clear()
 
         painel_fila = await canal_partidas.send(texto_fila(), view=PainelFila())
-        await message.reply(f"Fila criada com limite de **{limite} jogadores** no canal #partidas!")
+        await message.reply(f"Partida criada com limite de **{limite} jogadores** no canal #partidas!")
 
     elif message.content.startswith("!equipe"):
         mencionado = message.mentions.users.first()
@@ -313,7 +312,7 @@ async def on_message(message):
             return
 
         if message.author.id not in fila or mencionado.id not in fila:
-            await message.reply("Os dois jogadores precisam estar na fila.")
+            await message.reply("Os dois jogadores precisam estar na partida.")
             return
 
         convites[mencionado.id] = message.author.id
