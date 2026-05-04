@@ -16,6 +16,7 @@ CANAL_COMANDOS = "comandos-🤖"
 CANAL_PARTIDAS = "partidas-🔫"
 CANAL_EQUIPE = "equipe🤝"
 CANAL_RANKING = "ranking🏆"
+CANAL_MAPAS = "mapas🗺️"
 
 fila = []
 limite = 4
@@ -70,11 +71,7 @@ def adicionar_derrota(uid):
 
 
 def embed_erro(texto):
-    return discord.Embed(
-        title="❌ Erro",
-        description=texto,
-        color=discord.Color.red()
-    )
+    return discord.Embed(title="❌ Erro", description=texto, color=discord.Color.red())
 
 
 def canal_correto(msg, nome):
@@ -121,11 +118,7 @@ def embed_procurando(guild):
         icon_url=host.display_avatar.url if host else None
     )
 
-    embed.add_field(
-        name="👥 JOGADORES",
-        value=lista_jogadores(),
-        inline=False
-    )
+    embed.add_field(name="👥 JOGADORES", value=lista_jogadores(), inline=False)
 
     embed.add_field(
         name="📋 INFO",
@@ -168,7 +161,6 @@ def montar_times(jogadores):
                 vermelho.extend([jogador, parceiro])
             else:
                 azul.extend([jogador, parceiro])
-
             usados.add(jogador)
             usados.add(parceiro)
         else:
@@ -176,7 +168,6 @@ def montar_times(jogadores):
                 vermelho.append(jogador)
             else:
                 azul.append(jogador)
-
             usados.add(jogador)
 
     for a, b in rivais:
@@ -198,27 +189,17 @@ class Painel(discord.ui.View):
     @discord.ui.button(label="Entrar", style=discord.ButtonStyle.green)
     async def entrar(self, interaction, button):
         if interaction.user.id in fila:
-            return await interaction.response.send_message(
-                "Você já entrou na partida.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("Você já entrou na partida.", ephemeral=True)
 
         if len(fila) >= limite:
-            return await interaction.response.send_message(
-                "Partida cheia.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("Partida cheia.", ephemeral=True)
 
         fila.append(interaction.user.id)
 
         file = discord.File("procurando.png", filename="procurando.png")
         embed = embed_procurando(interaction.guild)
 
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self,
-            attachments=[file]
-        )
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
 
         if len(fila) >= limite:
             await iniciar_partida(interaction.guild)
@@ -226,21 +207,14 @@ class Painel(discord.ui.View):
     @discord.ui.button(label="Sair", style=discord.ButtonStyle.red)
     async def sair(self, interaction, button):
         if interaction.user.id not in fila:
-            return await interaction.response.send_message(
-                "Você não está na partida.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("Você não está na partida.", ephemeral=True)
 
         fila.remove(interaction.user.id)
 
         file = discord.File("procurando.png", filename="procurando.png")
         embed = embed_procurando(interaction.guild)
 
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self,
-            attachments=[file]
-        )
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
 
     @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.gray)
     async def cancelar(self, interaction, button):
@@ -267,11 +241,7 @@ class Painel(discord.ui.View):
         link_partida = None
         painel_partida = None
 
-        await interaction.response.edit_message(
-            embed=embed_cancelada(),
-            view=None,
-            attachments=[]
-        )
+        await interaction.response.edit_message(embed=embed_cancelada(), view=None, attachments=[])
 
 
 class ConviteView(discord.ui.View):
@@ -283,10 +253,7 @@ class ConviteView(discord.ui.View):
     @discord.ui.button(label="Aceitar Equipe", style=discord.ButtonStyle.green)
     async def aceitar(self, interaction, button):
         if interaction.user.id != self.convidado:
-            return await interaction.response.send_message(
-                "Esse convite não é para você.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
 
         duplas[self.quem_chamou] = self.convidado
         duplas[self.convidado] = self.quem_chamou
@@ -300,10 +267,7 @@ class ConviteView(discord.ui.View):
     @discord.ui.button(label="Recusar Equipe", style=discord.ButtonStyle.red)
     async def recusar(self, interaction, button):
         if interaction.user.id != self.convidado:
-            return await interaction.response.send_message(
-                "Esse convite não é para você.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("Esse convite não é para você.", ephemeral=True)
 
         rivais.add(tuple(sorted((self.quem_chamou, self.convidado))))
         convites.pop(self.convidado, None)
@@ -354,10 +318,7 @@ async def iniciar_partida(guild):
 
     embed.add_field(
         name="📋 INFO",
-        value=(
-            f"MODO: `{ultimo_modo}`\n"
-            f"HOST: `{nome_host}`"
-        ),
+        value=f"MODO: `{ultimo_modo}`\nHOST: `{nome_host}`",
         inline=False
     )
 
@@ -366,15 +327,10 @@ async def iniciar_partida(guild):
     embed.set_footer(text="AR2 Brasil [BR] • Partida iniciada")
 
     if painel_partida:
-        await painel_partida.edit(
-            embed=embed,
-            view=None,
-            attachments=[file]
-        )
+        await painel_partida.edit(embed=embed, view=None, attachments=[file])
 
     for player_id in jogadores:
         user = await bot.fetch_user(player_id)
-
         try:
             embed_dm = discord.Embed(
                 title="🎮 Só falta você para começar!",
@@ -382,7 +338,6 @@ async def iniciar_partida(guild):
                 color=discord.Color.dark_red()
             )
             embed_dm.set_footer(text="Boa partida!")
-
             await user.send(embed=embed_dm)
         except:
             pass
@@ -407,9 +362,7 @@ async def on_message(msg):
             return await msg.reply(f"❌ Use este comando no canal #{CANAL_COMANDOS}")
 
         if not tem_cargo(msg.author):
-            return await msg.reply(
-                embed=embed_erro("Você não possui permissão para criar uma partida!")
-            )
+            return await msg.reply(embed=embed_erro("Você não possui permissão para criar uma partida!"))
 
         canal = discord.utils.get(msg.guild.text_channels, name=CANAL_PARTIDAS)
 
@@ -427,14 +380,10 @@ async def on_message(msg):
         try:
             numero = int(comando.replace("!partida", ""))
         except:
-            return await msg.reply(
-                "Use: `!partida2`, `!partida4`, `!partida6`, `!partida8` ou `!partida10`."
-            )
+            return await msg.reply("Use: `!partida2`, `!partida4`, `!partida6`, `!partida8` ou `!partida10`.")
 
         if numero not in [2, 4, 6, 8, 10]:
-            return await msg.reply(
-                "Use apenas: `!partida2`, `!partida4`, `!partida6`, `!partida8` ou `!partida10`."
-            )
+            return await msg.reply("Use apenas: `!partida2`, `!partida4`, `!partida6`, `!partida8` ou `!partida10`.")
 
         fila.clear()
         duplas.clear()
@@ -448,11 +397,7 @@ async def on_message(msg):
         file = discord.File("procurando.png", filename="procurando.png")
         embed = embed_procurando(msg.guild)
 
-        painel_partida = await canal.send(
-            embed=embed,
-            view=Painel(),
-            file=file
-        )
+        painel_partida = await canal.send(embed=embed, view=Painel(), file=file)
 
         await msg.reply("Partida criada!")
 
@@ -487,9 +432,7 @@ async def on_message(msg):
 
     elif msg.content.lower().startswith("!vitória"):
         if not tem_cargo(msg.author):
-            return await msg.reply(
-                embed=embed_erro("Você não possui permissão para finalizar essa partida!")
-            )
+            return await msg.reply(embed=embed_erro("Você não possui permissão para finalizar essa partida!"))
 
         canal = discord.utils.get(msg.guild.text_channels, name=CANAL_PARTIDAS)
 
@@ -543,26 +486,9 @@ async def on_message(msg):
             icon_url=msg.author.display_avatar.url
         )
 
-        embed.add_field(
-            name="🏆 VENCEDORES",
-            value="\n".join(ganhos) if ganhos else "Vazio",
-            inline=False
-        )
-
-        embed.add_field(
-            name="💀 PERDEDORES",
-            value="\n".join(perdas) if perdas else "Vazio",
-            inline=False
-        )
-
-        embed.add_field(
-            name="📋 INFO",
-            value=(
-                f"HOST: `{nome_host}`\n"
-                f"MODO: `{ultimo_modo}`"
-            ),
-            inline=False
-        )
+        embed.add_field(name="🏆 VENCEDORES", value="\n".join(ganhos) if ganhos else "Vazio", inline=False)
+        embed.add_field(name="💀 PERDEDORES", value="\n".join(perdas) if perdas else "Vazio", inline=False)
+        embed.add_field(name="📋 INFO", value=f"HOST: `{nome_host}`\nMODO: `{ultimo_modo}`", inline=False)
 
         file = discord.File(imagem, filename=imagem)
         embed.set_image(url=f"attachment://{imagem}")
@@ -578,11 +504,7 @@ async def on_message(msg):
         user = msg.mentions[0] if msg.mentions else msg.author
         uid = str(user.id)
 
-        player = data.get(uid, {
-            "wins": 0,
-            "losses": 0,
-            "streak": 0
-        })
+        player = data.get(uid, {"wins": 0, "losses": 0, "streak": 0})
 
         wins = player["wins"]
         losses = player["losses"]
@@ -591,10 +513,7 @@ async def on_message(msg):
         total = wins + losses
         winrate = int((wins / total) * 100) if total > 0 else 0
 
-        embed = discord.Embed(
-            title=f"📊 Ranking de {user.display_name}",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title=f"📊 Ranking de {user.display_name}", color=discord.Color.gold())
 
         embed.add_field(name="🏆 Vitórias", value=str(wins), inline=True)
         embed.add_field(name="💀 Derrotas", value=str(losses), inline=True)
@@ -602,6 +521,43 @@ async def on_message(msg):
         embed.add_field(name="🔥 Sequência", value=f"{streak} wins", inline=False)
 
         await msg.channel.send(embed=embed)
+
+    elif msg.content == "!mapas":
+        canal_mapas = discord.utils.get(msg.guild.text_channels, name=CANAL_MAPAS)
+
+        if canal_mapas is None:
+            return await msg.reply(f"Não achei o canal #{CANAL_MAPAS}.")
+
+        embed_titulo = discord.Embed(
+            title="🗺️ Rotação De Mapas",
+            description="Confira os mapas disponíveis para as partidas.",
+            color=discord.Color.dark_red()
+        )
+
+        await canal_mapas.send(embed=embed_titulo)
+
+        mapas = [
+            ("Airport Terminal", "mapa1.png"),
+            ("Dueling Oil Rigs", "mapa2.png"),
+            ("Huntington", "mapa3.png"),
+            ("Lockport", "mapa4.png"),
+            ("University", "mapa5.png"),
+        ]
+
+        for nome, arquivo in mapas:
+            file = discord.File(arquivo, filename=arquivo)
+
+            embed = discord.Embed(
+                title=f"🗺️ {nome}",
+                color=discord.Color.dark_red()
+            )
+
+            embed.set_image(url=f"attachment://{arquivo}")
+            embed.set_footer(text="AR2 Brasil [BR]")
+
+            await canal_mapas.send(embed=embed, file=file)
+
+        await msg.reply(f"Rotação enviada no canal #{CANAL_MAPAS}!")
 
 
 bot.run(TOKEN)
