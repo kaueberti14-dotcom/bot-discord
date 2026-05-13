@@ -940,9 +940,11 @@ async def on_message(msg):
         await canal_regras.send(embed=embed_armas)
 
         armas = [
-            ("M1918 Tankgewehr", "arma1.png"),
-            ("Santa's Pig", "arma2.png"),
-            ("Trooper M1919A6", "arma3.png"),
+            armas = [
+    ("Santa's Pig", "arma1.png"),
+    ("Trooper M1919A6", "arma2.png"),
+    ("M1918 Tankgewehr", "arma3.png"),
+]
         ]
 
         for nome, arquivo in armas:
